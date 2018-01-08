@@ -1,6 +1,18 @@
 CHANGES
 =======
 
+1.0.36
+-----------
+* version 1.0.36
+* crush don't care whether the pool type is replica or erasure
+
+1.0.35
+-----------
+
+* version 1.0.35
+* As the original repo can not be accessed, I copy the repo from
+http://crush.readthedocs.io/en/latest
+
 1.0.25
 ------
 

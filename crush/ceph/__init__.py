@@ -98,10 +98,6 @@ class CephReport(object):
 
         failed_mapping = False
         for pool in report['osdmap']['pools']:
-            if pool['type'] != 1:
-                raise UnsupportedError(
-                    "pool " + pool['pool_name'] + " is type " + str(pool['type']) +
-                    " is not supported, only type == 1 (replicated)")
             if pool['object_hash'] != 2:
                 raise UnsupportedError(
                     "pool " + pool['pool_name'] + " object_hash " + str(pool['object_hash']) +
