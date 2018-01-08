@@ -20,20 +20,18 @@
 from __future__ import division
 
 import argparse
-import json
 import logging
 import textwrap
 
-from crush import Crush
 
 log = logging.getLogger(__name__)
 
 
 class Convert(object):
 
-    def __init__(self, args, hooks):
+    def __init__(self, args, main):
         self.args = args
-        self.hooks = hooks
+        self.main = main
 
     @staticmethod
     def get_parser():
@@ -41,29 +39,19 @@ class Convert(object):
             add_help=False,
             conflict_handler='resolve',
         )
-        formats = ('txt', 'json', 'python-json', 'crush')
-        parser.add_argument(
-            '--in-path',
-            required=True,
-            help='path of the input file')
-        parser.add_argument(
-            '--in-format',
-            choices=formats,
-            help='format of the input file')
         parser.add_argument(
             '--out-path',
-            required=True,
             help='path of the output file')
         parser.add_argument(
-            '--out-format',
-            choices=formats,
-            default='python-json',
-            help='format of the output file')
+            '--pool',
+            help='pool',
+            type=int)
         return parser
 
     @staticmethod
-    def set_parser(subparsers):
+    def set_parser(subparsers, arguments):
         parser = Convert.get_parser()
+        arguments(parser)
         subparsers.add_parser(
             'convert',
             formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -107,24 +95,16 @@ class Convert(object):
             func=Convert,
         )
 
-    @staticmethod
-    def choose_args_int_index(crushmap):
-        if 'choose_args' not in crushmap:
-            return crushmap
-        crushmap['choose_args'] = {
-            int(k): v for (k, v) in crushmap['choose_args'].items()
-        }
-        return crushmap
+    def pre_sanity_check_args(self):
+        self.main.hook_convert_pre_sanity_check_args(self.args)
+
+    def post_sanity_check_args(self):
+        self.main.hook_convert_post_sanity_check_args(self.args)
+        if not self.args.out_path:
+            raise Exception("missing --out-path")
 
     def run(self):
-        c = Crush(verbose=self.args.verbose, backward_compatibility=True)
-        c.parse(self.args.in_path)
-        crushmap = c.get_crushmap()
-        if self.args.out_format == 'python-json':
-            open(self.args.out_path, "w").write(json.dumps(c.get_crushmap(),
-                                                           indent=4, sort_keys=True))
-        else:
-            c.parse(Convert.choose_args_int_index(crushmap))
-            c.c.ceph_write(self.args.out_path,
-                           self.args.out_format,
-                           crushmap.get('private'))
+        self.pre_sanity_check_args()
+        crushmap = self.main.convert_to_crushmap(self.args.in_path)
+        self.post_sanity_check_args()
+        self.main.crushmap_to_file(crushmap)

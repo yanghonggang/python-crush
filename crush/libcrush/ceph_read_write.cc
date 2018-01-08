@@ -25,11 +25,27 @@ static char *crush_to_json(CrushWrapper& crush)
   return strdup(sout.str().c_str());
 }
 
-int ceph_write(LibCrush *self, const char *path, const char *format, PyObject *info)
+static int ceph_copy_choose_args(LibCrush *self, CrushWrapper &crush)
 {
-  CrushWrapper crush;
-  crush.crush = self->map;
+  PyObject *key;
+  PyObject *value;
+  Py_ssize_t pos = 0;
+  while (PyDict_Next(self->choose_args, &pos, &key, &value)) {
+    int k = MyInt_AsInt(key);
+    if (PyErr_Occurred()) {
+      crush.choose_args.clear();
+      return -EINVAL;
+    }
+    struct crush_choose_arg_map choose_arg_map;
+    choose_arg_map.args = (struct crush_choose_arg *)PyCapsule_GetPointer(value, NULL);
+    choose_arg_map.size = crush.crush->max_buckets;
+    crush.choose_args[k] = choose_arg_map;
+  }
+  return 0;
+}
 
+static int _ceph_write(LibCrush *self, const char *path, const char *format, PyObject *info, CrushWrapper &crush)
+{
   PyObject *key;
   PyObject *value;
   Py_ssize_t pos;
@@ -58,29 +74,9 @@ int ceph_write(LibCrush *self, const char *path, const char *format, PyObject *i
     crush.set_item_name(v, k);
   }
 
-  // rule names
-  pos = 0;
-  while (PyDict_Next(self->rules, &pos, &key, &value)) {
-    const char *k = MyText_AsString(key);
-    if (k == 0)
-      return -EINVAL;
-    int v = MyInt_AsInt(value);
-    if (PyErr_Occurred())
-      return -EINVAL;
-    crush.set_rule_name(v, k);
-  }
-
-  // choose_args map
-  pos = 0;
-  while (PyDict_Next(self->choose_args, &pos, &key, &value)) {
-    int k = MyInt_AsInt(key);
-    if (PyErr_Occurred())
-      return -EINVAL;
-    struct crush_choose_arg_map choose_arg_map;
-    choose_arg_map.args = (struct crush_choose_arg *)PyCapsule_GetPointer(value, NULL);
-    choose_arg_map.size = crush.crush->max_buckets;
-    crush.choose_args[k] = choose_arg_map;
-  }
+  int r = ceph_copy_choose_args(self, crush);
+  if (r < 0)
+    return r;
 
   if (info != Py_None) {
     PyObject *rules = PyDict_GetItemString(info, "rules");
@@ -88,6 +84,8 @@ int ceph_write(LibCrush *self, const char *path, const char *format, PyObject *i
       PyObject *self_rule_name;
       PyObject *python_rule_id;
       pos = 0;
+      crush_rule *ordered_rules[self->map->max_rules];
+      memset(ordered_rules, '\0', sizeof(crush_rule *) * self->map->max_rules);
       while (PyDict_Next(self->rules, &pos, &self_rule_name, &python_rule_id)) {
         int rule_id = MyInt_AsInt(python_rule_id);
         assert(rule_id >= 0);
@@ -100,8 +98,16 @@ int ceph_write(LibCrush *self, const char *path, const char *format, PyObject *i
             continue;
           if (!PyObject_RichCompareBool(self_rule_name, python_rule_name, Py_EQ))
             continue;
-          struct crush_rule *rule = self->map->rules[rule_id];
+          const char *rule_name = MyText_AsString(python_rule_name);
+          if (rule_name == 0)
+            return -EINVAL;
+          PyObject *python_rule_id = PyDict_GetItemString(python_rule, "rule_id");
+          assert(python_rule_id);
+          int ordered_rule_id = MyInt_AsInt(python_rule_id);
+          crush.set_rule_name(ordered_rule_id, rule_name);
+          crush_rule *rule = self->map->rules[rule_id];
           assert(rule);
+          ordered_rules[ordered_rule_id] = rule;
           PyObject *python_type = PyDict_GetItemString(python_rule, "type");
           assert(python_type);
           rule->mask.type = MyInt_AsInt(python_type);
@@ -114,6 +120,18 @@ int ceph_write(LibCrush *self, const char *path, const char *format, PyObject *i
           PyObject *python_ruleset = PyDict_GetItemString(python_rule, "ruleset");
           assert(python_ruleset);
           rule->mask.ruleset = MyInt_AsInt(python_ruleset);
+        }
+      }
+      // swap the rules so they are in the order specified by Ceph rule_id
+      for (int j = 0; j < self->map->max_rules; j++) {
+        int effective_rule_id = crush_add_rule(self->map, ordered_rules[j], j);
+        if (effective_rule_id < 0) {
+          PyErr_Format(PyExc_RuntimeError, "crush_add_rule(%d) %s", j, strerror(-effective_rule_id));
+          return 0;
+        }
+        if (effective_rule_id != j) {
+          PyErr_Format(PyExc_RuntimeError, "crush_add_rule(%d) returned %d", j, effective_rule_id);
+          return 0;
         }
       }
     }
@@ -161,10 +179,40 @@ int ceph_write(LibCrush *self, const char *path, const char *format, PyObject *i
   } else {
     return -EDOM;
   }
-  crush.crush = NULL;
-  crush.choose_args.clear();
 
   return 0;
+}
+
+int ceph_write(LibCrush *self, const char *path, const char *format, PyObject *info)
+{
+  CrushWrapper crush;
+  crush.crush = self->map;
+  int r = _ceph_write(self, path, format, info, crush);
+  crush.crush = NULL;
+  crush.choose_args.clear();
+  return r;
+}
+
+static int _ceph_incompat(LibCrush *self, int *out, CrushWrapper &crush)
+{
+  int r = ceph_copy_choose_args(self, crush);
+  if (r < 0)
+    return r;
+  if (crush.has_choose_args() && crush.has_incompat_choose_args())
+    *out = 1;
+  else
+    *out = 0;
+  return 0;
+}
+
+int ceph_incompat(LibCrush *self, int *out)
+{
+  CrushWrapper crush;
+  crush.crush = self->map;
+  int r = _ceph_incompat(self, out, crush);
+  crush.crush = NULL;
+  crush.choose_args.clear();
+  return r;
 }
 
 int ceph_read_txt_to_json(const char *in, char **out)

@@ -239,10 +239,14 @@ static int parse_weight(LibCrush *self, PyObject *item, int *weightout, PyObject
     *weightout = 0x10000;
   } else {
     append_trace(trace, PyUnicode_FromFormat("weight %S", weight));
-    double w = PyFloat_AsDouble(weight);
+    if (!MyInt_Check(weight)) {
+      PyErr_SetString(PyExc_RuntimeError, "weight must be an int");
+      return 0;
+    }
+    *weightout = MyInt_AsInt(weight);
+    append_trace(trace, PyUnicode_FromFormat("weight %d", *weightout));
     if (PyErr_Occurred())
       return 0;
-    *weightout = (int)(w * (double)0x10000);
   }
   return 1;
 }
@@ -964,10 +968,13 @@ static int parse_choose_args_bucket_weight_set(LibCrush *self, struct crush_choo
     Py_ssize_t i;
     for (i = 0; i < PyList_Size(python_weights); i++) {
       PyObject *python_weight = PyList_GetItem(python_weights, i);
-      double weight = PyFloat_AsDouble(python_weight);
+      if (!MyInt_Check(python_weight)) {
+        PyErr_SetString(PyExc_RuntimeError, "weight must be an int");
+        return 0;
+      }
+      choose_args->weight_set[pos].weights[i] = MyInt_AsInt(python_weight);
       if (PyErr_Occurred())
         return 0;
-      choose_args->weight_set[pos].weights[i] = (int)(weight * (double)0x10000);
     }
   }
 
@@ -1073,6 +1080,8 @@ static void choose_args_destructor(PyObject *capsule)
 
 static int parse_choose_args(LibCrush *self, PyObject *map, PyObject *trace)
 {
+  PyDict_Clear(self->choose_args);
+
   PyObject *choose_args = PyDict_GetItemString(map, "choose_args");
   if (choose_args == NULL)
     return 1;
@@ -1083,8 +1092,6 @@ static int parse_choose_args(LibCrush *self, PyObject *map, PyObject *trace)
     PyErr_Format(PyExc_RuntimeError, "must be a dict");
     return 0;
   }
-
-  PyDict_Clear(self->choose_args);
 
   PyObject *python_key;
   PyObject *python_value;
@@ -1384,6 +1391,26 @@ LibCrush_ceph_write(LibCrush *self, PyObject *args)
 }
 
 static PyObject *
+LibCrush_ceph_incompat(LibCrush *self)
+{
+  if (self->map == NULL)
+    Py_RETURN_FALSE;
+
+  int out;
+
+  int r = ceph_incompat(self, &out);
+  if (r < 0) {
+    PyErr_Format(PyExc_RuntimeError, "ceph_incompat returned %d %s", r, strerror(-r));
+    return 0;
+  }
+
+  if (out)
+    Py_RETURN_TRUE;
+  else
+    Py_RETURN_FALSE;
+}
+
+static PyObject *
 LibCrush_ceph_read(LibCrush *self, PyObject *args)
 {
   const char *path;
@@ -1458,6 +1485,8 @@ LibCrush_methods[] = {
             PyDoc_STR("parse the crush map") },
     { "map",      (PyCFunction) LibCrush_map,        METH_VARARGS|METH_KEYWORDS,
             PyDoc_STR("map a value to items") },
+    { "ceph_incompat",  (PyCFunction) LibCrush_ceph_incompat,    METH_NOARGS,
+            PyDoc_STR("TRUE if the crushmap requires >= luminous") },
     { "ceph_read",  (PyCFunction) LibCrush_ceph_read,    METH_VARARGS,
             PyDoc_STR("read from Ceph txt/bin crushmap") },
     { "ceph_write",  (PyCFunction) LibCrush_ceph_write,    METH_VARARGS,

@@ -23,169 +23,9 @@ import collections
 import copy
 import json
 import logging
-import re
-import struct
 from crush.libcrush import LibCrush
 
 log = logging.getLogger(__name__)
-
-
-class CephConverter(object):
-
-    @staticmethod
-    def weight_as_float(i):
-        return i / 0x10000
-
-    def convert_item(self, item, ceph):
-        if item['id'] >= 0:
-            return {
-                "weight": self.weight_as_float(item['weight']),
-                "id": item['id'],
-                "name": ceph['id2name'][item['id']],
-            }
-        else:
-            return {
-                "weight": self.weight_as_float(item['weight']),
-                "reference_id": item['id'],
-            }
-
-    def convert_bucket(self, bucket, ceph):
-        b = {
-            "weight": self.weight_as_float(bucket['weight']),
-            "id": bucket['id'],
-            "name": bucket['name'],
-            "algorithm": bucket['alg'],
-            "type": bucket['type_name'],
-        }
-        items = bucket.get('items', [])
-        if items:
-            children = []
-            last_pos = -1
-            for item in items:
-                # the actual pos value does not change the mapping
-                # when there is an empty item (we do not store pos)
-                # but the order of the items is important and we
-                # need to assert that the list is ordered
-                assert last_pos < item['pos']
-                last_pos = item['pos']
-                children.append(self.convert_item(item, ceph))
-            b['children'] = children
-        return b
-
-    def collect_items(self, children, ceph):
-        for child in children:
-            if 'id' in child:
-                ceph['id2item'][child['id']] = child
-            self.collect_items(child.get('children', []), ceph)
-
-    def dereference(self, children, ceph):
-        for i in range(len(children)):
-            child = children[i]
-            if 'reference_id' in child:
-                id = child['reference_id']
-                new_child = copy.copy(ceph['id2item'][id])
-                new_child['weight'] = child['weight']
-                ceph['is_child'].add(id)
-                children[i] = new_child
-            self.dereference(child.get('children', []), ceph)
-
-    def convert_buckets(self, ceph):
-        ceph['is_child'] = set()
-        ceph['id2item'] = {}
-        converted = [self.convert_bucket(r, ceph) for r in ceph['buckets']]
-        self.collect_items(converted, ceph)
-        self.dereference(converted, ceph)
-        return list(filter(lambda c: c['id'] not in ceph['is_child'], converted))
-
-    def convert_rule(self, ceph_rule, ceph):
-        name = ceph_rule['rule_name']
-        rule = []
-        for ceph_step in ceph_rule['steps']:
-            if 'opcode' in ceph_step:
-                if ceph_step['opcode'] in (10, 11, 12, 13):
-                    id2name = {
-                        10: 'set_choose_local_tries',
-                        11: 'set_choose_local_fallback_tries',
-                        12: 'set_chooseleaf_vary_r',
-                        13: 'set_chooseleaf_stable',
-                    }
-                    step = [id2name[ceph_step['opcode']], ceph_step['arg1']]
-                else:
-                    assert 0, "unexpected rule opcode " + str(ceph_step['opcode'])
-            elif 'op' in ceph_step:
-                if ceph_step['op'] == 'take':
-                    step = [ceph_step['op'], ceph_step['item_name']]
-                elif ceph_step['op'] in ('chooseleaf_firstn',
-                                         'choose_firstn',
-                                         'chooseleaf_indep',
-                                         'choose_indep'):
-                    (choose, how) = ceph_step['op'].split('_')
-                    if ceph['type2id'][ceph_step['type']] == 0:
-                        type = 0
-                    else:
-                        type = ceph_step['type']
-                    step = [choose, how, ceph_step['num'], 'type', type]
-                elif ceph_step['op'] in ('set_choose_local_tries',
-                                         'set_choose_local_fallback_tries',
-                                         'set_chooseleaf_vary_r',
-                                         'set_chooseleaf_stable',
-                                         'set_choose_tries',
-                                         'set_chooseleaf_tries'):
-                    step = [ceph_step['op'], ceph_step['num']]
-                elif ceph_step['op'] == 'emit':
-                    step = ['emit']
-                elif ceph_step['op'] == 'noop':
-                    pass
-                else:
-                    assert 0, "unexpected rule op " + str(ceph_step['op'])
-            else:
-                assert 0, "no op or opcode found"
-            rule.append(step)
-        return (name, rule)
-
-    def convert_tunables(self, tunables):
-        known = set([
-            'choose_local_tries',
-            'choose_local_fallback_tries',
-            'chooseleaf_vary_r',
-            'chooseleaf_stable',
-            'chooseleaf_descend_once',
-            'straw_calc_version',
-
-            'choose_total_tries',
-        ])
-        out = {}
-        for (k, v) in tunables.items():
-            if k in known:
-                out[k] = v
-        return out
-
-    def parse_ceph(self, ceph):
-        ceph['id2name'] = {d['id']: d['name'] for d in ceph['devices']}
-        ceph['type2id'] = {t['name']: t['type_id'] for t in ceph['types']}
-
-        j = {
-            'private': {},
-        }
-
-        j['types'] = ceph['types']
-
-        j['trees'] = self.convert_buckets(ceph)
-
-        j['rules'] = {}
-        for ceph_rule in ceph['rules']:
-            (name, rule) = self.convert_rule(ceph_rule, ceph)
-            j['rules'][name] = rule
-        j['private']['rules'] = ceph['rules']
-
-        j['tunables'] = self.convert_tunables(ceph['tunables'])
-
-        j['private']['tunables'] = ceph['tunables']
-
-        if 'choose_args' in ceph:
-            j['choose_args'] = ceph['choose_args']
-
-        return j
 
 
 class Crush(object):
@@ -276,7 +116,6 @@ class Crush(object):
         **Backward compatibility** in the class documentation.
 
         """
-        self.verbose = verbose
         self.c = LibCrush(verbose=verbose and 1 or 0,
                           backward_compatibility=backward_compatibility and 1 or 0)
 
@@ -350,7 +189,7 @@ class Crush(object):
               "algorithm": "uniform" or "list" or "straw2",
 
               # optional (default: cumulated children weights or none)
-              "weight": <postive float>,
+              "weight": <postive Q16.16>,
 
               # optional (default: none)
               "children": children
@@ -465,13 +304,13 @@ class Crush(object):
               "reference_id": <int>,
 
               # optional (default: 1.0)
-              "weight": <postive float>,
+              "weight": <postive Q16.16>,
             }
 
         The **reference_id** must be equal to the **id** of a bucket or
         device defined in the hierarchy.
 
-        If the **weight** is omitted, it default to 1.0. The
+        If the **weight** is omitted, it default to 0x10000. The
         **weight** must either be set for all references or not at
         all.
         ::
@@ -483,8 +322,8 @@ class Crush(object):
               # mandatory
               "name": <str>,
 
-              # optional (default: 1.0)
-              "weight": <postive float>,
+              # optional (default: 0x10000)
+              "weight": <postive Q16.16>,
             }
 
         The **id** must be a unique positive number.
@@ -494,8 +333,8 @@ class Crush(object):
 
         If the **weight** of a device A is lower than the
         **weight** of a device B, it will be less likely to be used.
-        A common pattern is to set the **weight** to 2.0 for 2TB
-        devices, 1.0 for 1TB devices, 0.5 for 500GB devices, etc.
+        A common pattern is to set the **weight** to 0x20000 for 2TB
+        devices, 0x10000 for 1TB devices, 0x08000 for 500GB devices, etc.
         ::
 
             rules = {
@@ -649,8 +488,8 @@ class Crush(object):
         ::
 
             choose_args_weight_set = [
-               [ <positive float>, <positive float>, ... ], # position 0
-               [ <positive float>, <positive float>, ... ], # position 1
+               [ <positive Q16.16>, <positive Q16.16>, ... ], # position 0
+               [ <positive Q16.16>, <positive Q16.16>, ... ], # position 1
                ...
             ]
 
@@ -729,8 +568,8 @@ class Crush(object):
             {
                "name": "bucket1":
                "children": [
-                   { "name": "device1", "id": 1, "weight": 1.0 },
-                   { "name": "device2", "id": 2, "weight": 2.0 },
+                   { "name": "device1", "id": 1, "weight": 1 * 0x10000 },
+                   { "name": "device2", "id": 2, "weight": 2 * 0x10000 },
                ]
             }
 
@@ -739,7 +578,7 @@ class Crush(object):
 
             map(85, choose_args=[
               { "bucket_name": "bucket1",
-                "weight_set": [ [ 2.0, 1.0 ] ]
+                "weight_set": [ [ 2 * 0x10000, 1 * 0x10000 ] ]
               }]) == [ 'device1' ]
 
         Similarly the result can be influenced by providing
@@ -778,47 +617,24 @@ class Crush(object):
             kwargs["choose_args"] = choose_args
         return self.c.map(**kwargs)
 
-    @staticmethod
-    def _is_ceph_file(something):
-        fmt = "I"
-        crush_magic = 0x00010000
-        head = open(something, mode='rb').read(struct.calcsize(fmt))
-        if struct.unpack(fmt, head)[0] == crush_magic:
-            return True
-        content = open(something).read()
-        if (re.search("^device ", content, re.MULTILINE) and
-                re.search("^type ", content, re.MULTILINE)):
-            return True
-        return False
-
-    @staticmethod
-    def _convert_from_file(something):
-        if Crush._is_ceph_file(something):
-            crushmap = LibCrush().ceph_read(something)
-            return (json.loads(crushmap), 'ceph-json')
+    def _convert_to_crushmap(self, something):
+        if type(something) in (dict, collections.OrderedDict):
+            return something
         else:
             with open(something) as f_json:
-                crushmap = json.load(f_json)
-                log.debug("_detect_file_format: valid json file")
-                if 'devices' in crushmap:  # Ceph json format
-                    return (crushmap, 'ceph-json')
-                return (crushmap, 'python-crush-json')
+                return json.load(f_json, object_pairs_hook=collections.OrderedDict)
+
+    def to_file(self, out_path):
+        open(out_path, "w").write(json.dumps(self.crushmap, indent=4, sort_keys=True))
 
     @staticmethod
-    def _convert_to_dict(something):
-        if type(something) is dict:
-            if 'devices' in something:  # Ceph json format
-                return (something, 'ceph-json')
-            return (something, 'python-crush-json')
-        else:
-            return Crush._convert_from_file(something)
-
-    @staticmethod
-    def _convert_to_crushmap(something):
-        (crushmap, format) = Crush._convert_to_dict(something)
-        if format == 'ceph-json':
-            crushmap = CephConverter().parse_ceph(crushmap)
-        return crushmap
+    def parse_osdmap_weights(osdmap):
+        weights = {}
+        for osd in osdmap["osds"]:
+            if osd["weight"] < 1.0:
+                key = "osd.{}".format(osd["osd"])
+                weights[key] = osd["weight"]
+        return weights
 
     @staticmethod
     def parse_weights_file(weights_file):
@@ -854,13 +670,7 @@ class Crush(object):
 
         osdmap_keys = {"epoch", "fsid", "osds", "pools"}  # And many more!
         if all(k in raw_data for k in osdmap_keys):
-            # We're likely dealing with an OSDMap
-            try:
-                weights = dict(
-                    ("osd.{}".format(osd["osd"]), osd["weight"])
-                    for osd in raw_data["osds"])
-            except:  # Many different exceptions can happen
-                raise AssertionError("Failed to read Ceph OSDMap {}".format(f_name))
+            weights = Crush.parse_osdmap_weights(raw_data)
         else:
             weights = raw_data
 
@@ -978,7 +788,20 @@ class Crush(object):
         for name, choose_args in name2choose_args.items():
             self.crushmap['choose_args'][name] = sorted(choose_args, key=lambda v: v['bucket_id'])
 
+    def update_choose_args(self, name, choose_args):
+        if 'choose_args' not in self.crushmap:
+            self.crushmap['choose_args'] = {name: choose_args}
+            return
+        if name not in self.crushmap['choose_args']:
+            self.crushmap['choose_args'][name] = choose_args
+            return
+        u = {}
+        for choose_arg in self.crushmap['choose_args'][name] + choose_args:
+            u[choose_arg['bucket_id']] = choose_arg
+        self.crushmap['choose_args'][name] = sorted(u.values(), key=lambda v: v['bucket_id'])
+
     def filter(self, fun, root):
+        names = self.crushmap.get('choose_args', {}).keys()
         self._merge_choose_args()
 
         def walk(bucket):
@@ -998,6 +821,10 @@ class Crush(object):
         walk(root)
 
         self._split_choose_args()
+        if 'choose_args' in self.crushmap:
+            for name in names:
+                if name not in self.crushmap['choose_args']:
+                    self.crushmap['choose_args'][name] = []
 
     @staticmethod
     def collect_paths(children, path):

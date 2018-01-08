@@ -32,45 +32,55 @@ from crush import Crush
 log = logging.getLogger(__name__)
 
 
+class BadMapping(Exception):
+    pass
+
+
 class Analyze(object):
 
-    def __init__(self, args, hooks):
+    DEFAULT_VALUES_COUNT = 100000
+    DEFAULT_REPLICATION_COUNT = 3
+
+    def __init__(self, args, main):
         self.args = args
-        self.hooks = hooks
+        self.main = main
 
     @staticmethod
-    def get_parser():
+    def get_parser_base():
         parser = argparse.ArgumentParser(
             add_help=False,
             conflict_handler='resolve',
         )
-        replication_count = 3
         parser.add_argument(
             '--replication-count',
-            help=('number of devices to map (default: %d)' % replication_count),
+            help=('number of devices to map (default: %d)' % Analyze.DEFAULT_REPLICATION_COUNT),
             type=int,
-            default=replication_count)
+            default=Analyze.DEFAULT_REPLICATION_COUNT)
         parser.add_argument(
             '--rule',
             help='the name of rule')
         parser.add_argument(
-            '--type',
-            help='override the type of bucket shown in the report')
-        parser.add_argument(
             '--choose-args',
             help='modify the weights')
+        parser.add_argument(
+            '--values-count',
+            help='repeat mapping (default: %d)' % Analyze.DEFAULT_VALUES_COUNT,
+            type=int,
+            default=Analyze.DEFAULT_VALUES_COUNT)
+        return parser
+
+    @staticmethod
+    def get_parser():
+        parser = Analyze.get_parser_base()
+        parser.add_argument(
+            '--type',
+            help='override the type of bucket shown in the report')
         parser.add_argument(
             '--crushmap',
             help='path to the crushmap file')
         parser.add_argument(
             '-w', '--weights',
             help='path to the weights file')
-        values_count = 100000
-        parser.add_argument(
-            '--values-count',
-            help='repeat mapping (default: %d)' % values_count,
-            type=int,
-            default=values_count)
         return parser
 
     @staticmethod
@@ -112,9 +122,9 @@ class Analyze(object):
             The first item in the report will be the first to become
             full. For instance if the report starts with:
 
-                    ~id~  ~weight~  ~objects~  ~over/under used %~
+                    ~id~  ~weight~  ~objects~  ~over/under filled %~
             ~name~
-            g9       -22  2.29             85                10.40
+            g9       -22  2.29             85                  10.40
 
             it means that the bucket g9 with id -22 and weight 2.29
             will be the first bucket of its type to become full. The
@@ -122,10 +132,10 @@ class Analyze(object):
             usage, i.e. if the g9 host is expected to be 70%
             full, it will actually be 80.40% full.
 
-            The ~over/under used %~ is the variation between the
+            The ~over/under filled %~ is the variation between the
             expected item usage and the actual item usage. If it is
-            positive the item is overused, if it is negative the item
-            is underused.
+            positive the item is overfilled, if it is negative the item
+            is underfilled.
 
             The second step shows the worst case scenario if a bucket
             in the failure domain is removed from the crushmap. The
@@ -144,10 +154,10 @@ class Analyze(object):
             The worst case scenario for each item type is when the
             overfull percentage is higher. It is displayed as follows:
 
-                     ~over used %~
+                     ~over filled %~
             ~type~
-            device          25.55
-            host            22.45
+            device             25.55
+            host               22.45
 
             If a host fail, the worst case scenario is that a device
             will be 25.55% overfull or a host will be 22.45% overfull.
@@ -160,31 +170,37 @@ class Analyze(object):
 
             $ crush analyze --values-count 100 --rule data \\
                             --crushmap tests/sample-crushmap.json
-                    ~id~  ~weight~  ~objects~  ~over/under used %~
+                    ~id~  ~weight~  ~objects~  ~over/under filled %~
             ~name~
-            host2     -4       1.0         70                  5.0
-            host0     -2       1.0         65                 -2.5
-            host1     -3       1.0         65                 -2.5
+            host2     -4       1.0         70                    5.0
+            host0     -2       1.0         65                   -2.5
+            host1     -3       1.0         65                   -2.5
 
             Display the first device that will become full.
 
             $ crush analyze --values-count 100 --rule data \\
                             --type device \\
                             --crushmap tests/sample-crushmap.json
-                     ~id~  ~weight~  ~objects~  ~over/under used %~
+                     ~id~  ~weight~  ~objects~  ~over/under filled %~
             ~name~
-            device0     0       1.0         28                26.00
-            device4     4       1.0         24                 8.00
-            device5     5       2.0         46                 3.50
-            device3     3       2.0         44                -1.00
-            device2     2       1.0         21                -5.50
-            device1     1       2.0         37               -16.75
+            device0     0       1.0         28                  26.00
+            device4     4       1.0         24                   8.00
+            device5     5       2.0         46                   3.50
+            device3     3       2.0         44                  -1.00
+            device2     2       1.0         21                  -5.50
+            device1     1       2.0         37                 -16.75
             """),
             help='Analyze crushmaps',
             parents=[parser],
         ).set_defaults(
             func=Analyze,
         )
+
+    def pre_sanity_check_args(self):
+        self.main.hook_analyze_pre_sanity_check_args(self.args)
+
+    def post_sanity_check_args(self):
+        self.main.hook_analyze_post_sanity_check_args(self.args)
 
     @staticmethod
     def collect_dataframe(crush, child):
@@ -224,16 +240,33 @@ class Analyze(object):
         return d.set_index('~name~')
 
     @staticmethod
-    def collect_nweight(d, replication_count, failure_domain):
-        d['~nweight~'] = 0.0
-        d['~overweight~'] = False
-        for type in d['~type~'].unique():
+    def collect_cropped_weights(d, replication_count, failure_domain):
+        d['~overweighted~'] = False
+        d['~cropped weight~'] = d['~weight~'].copy()
+        d['~cropped %~'] = 0.0
+        for type in (failure_domain, 'device'):
+            if len(d.loc[d['~type~'] == type]) == 0:
+                continue
             w = d.loc[d['~type~'] == type].copy()
             tw = w['~weight~'].sum()
-            if type == failure_domain:
-                w['~overweight~'] = w['~weight~'].apply(
-                    lambda w: w > tw / replication_count)
-            w['~nweight~'] = w['~weight~'].apply(lambda w: w / float(tw))
+            w['~overweighted~'] = w['~weight~'].apply(lambda w: w > tw / replication_count)
+            overweighted_count = len(w.loc[w['~overweighted~']])
+            if overweighted_count > 0:
+                tw_not_overweighted = w.loc[~w['~overweighted~'], ['~weight~']].sum()['~weight~']
+                assert replication_count > overweighted_count
+                cropped_weight = tw_not_overweighted / (replication_count - overweighted_count)
+                w.loc[w['~overweighted~'], ['~cropped weight~']] = cropped_weight
+                w['~cropped %~'] = (1.0 - w['~cropped weight~'] / w['~weight~']) * 100
+            d.loc[d['~type~'] == type] = w
+        return d
+
+    @staticmethod
+    def collect_nweight(d):
+        d['~nweight~'] = 0.0
+        for type in d['~type~'].unique():
+            w = d.loc[d['~type~'] == type].copy()
+            tw = w['~cropped weight~'].sum()
+            w['~nweight~'] = w['~cropped weight~'].apply(lambda w: w / float(tw))
             d.loc[d['~type~'] == type] = w
         return d
 
@@ -252,28 +285,10 @@ class Analyze(object):
             d.loc[d['~type~'] == type] = e
         return d
 
-    @staticmethod
-    def collect_expected_objects(d, total):
-        d['~expected~'] = 0
-        for type in d['~type~'].unique():
-            e = d.loc[d['~type~'] == type].copy()
-            e['~expected~'] = e['~nweight~'].apply(lambda w: total * w).astype(int)
-            remainder = total - e['~expected~'].sum()
-            if remainder > 0:
-                rounding = e['~expected~'].copy()
-                rounding[:remainder] += 1
-                e['~expected~'] = rounding
-                assert total - e['~expected~'].sum() == 0
-            d.loc[d['~type~'] == type] = e
-        return d
-
-    @staticmethod
-    def collect_usage(d, total_objects):
+    def collect_usage(self, d, total_objects):
         capacity = d['~nweight~'] * float(total_objects)
-        d['~over/under used %~'] = 0.0
-        for type in d['~type~'].unique():
-            usage = d['~objects~'] / capacity - 1.0
-            d.loc[d['~type~'] == type, ['~over/under used %~']] = usage * 100
+        n = self.main.value_name()
+        d['~over/under filled %~'] = (d['~' + n + '~'] / capacity - 1.0) * 100 - d['~cropped %~']
         return d
 
     def run_simulation(self, c, root_name, failure_domain):
@@ -283,81 +298,103 @@ class Analyze(object):
         else:
             weights = None
 
-        values = self.hooks.hook_create_values()
+        values = self.main.hook_create_values()
         replication_count = self.args.replication_count
         total_objects = replication_count * len(values)
 
         root = c.find_bucket(root_name)
         log.debug("root = " + str(root))
         d = Analyze.collect_dataframe(c, root)
-        d = Analyze.collect_nweight(d, replication_count, failure_domain)
+        d = Analyze.collect_cropped_weights(d, replication_count, failure_domain)
+        d = Analyze.collect_nweight(d)
         d = Analyze.collect_expected_objects(d, total_objects)
 
         rule = self.args.rule
         device2count = collections.defaultdict(lambda: 0)
         for (name, value) in values.items():
             m = c.map(rule, value, replication_count, weights, choose_args=self.args.choose_args)
-            assert(len(m) == replication_count)
-            log.debug("{} == {} mapped to {}".format(name, value, m))
+            if len(m) != replication_count:
+                raise BadMapping("{} mapped to {}".format(value, m))
             for device in m:
                 device2count[device] += 1
 
         item2path = c.collect_item2path([root])
         log.debug("item2path = " + str(item2path))
-        d['~objects~'] = 0
+        d['~' + self.main.value_name() + '~'] = 0
         for (device, count) in device2count.items():
             for item in item2path[device]:
-                d.at[item, '~objects~'] += count
+                d.at[item, '~' + self.main.value_name() + '~'] += count
 
-        return Analyze.collect_usage(d, total_objects)
+        return self.collect_usage(d, total_objects)
 
     def analyze_failures(self, c, take, failure_domain):
         if failure_domain == 0:  # failure domain == device is a border case
             return None
         root = c.find_bucket(take)
         worst = pd.DataFrame()
-        for may_fail in c.collect_buckets_by_type([root], failure_domain):
-            f = Crush(verbose=self.args.verbose,
+        available_buckets = c.collect_buckets_by_type([root], failure_domain)
+        if len(available_buckets) <= self.args.replication_count:
+            log.error("there are not enough " + failure_domain +
+                      " to sustain failure")
+            return None
+        for may_fail in available_buckets:
+            f = Crush(verbose=self.args.debug,
                       backward_compatibility=self.args.backward_compatibility)
             f.crushmap = copy.deepcopy(c.get_crushmap())
             root = f.find_bucket(take)
             f.filter(lambda x: x.get('name') != may_fail.get('name'), root)
             f.parse(f.crushmap)
-            a = self.run_simulation(f, take, failure_domain)
-            a['~over used %~'] = a['~over/under used %~']
-            a = a[['~type~', '~over used %~']]
-            worst = pd.concat([worst, a]).groupby(['~type~']).max().reset_index()
+            try:
+                a = self.run_simulation(f, take, failure_domain)
+                a['~over filled %~'] = a['~over/under filled %~']
+                a = a[['~type~', '~over filled %~']]
+                worst = pd.concat([worst, a]).groupby(['~type~']).max().reset_index()
+            except BadMapping:
+                log.error("mapping failed when removing {}".format(may_fail))
+
         return worst.set_index('~type~')
 
     def _format_report(self, d, type):
         s = (d['~type~'] == type) & (d['~weight~'] > 0)
-        a = d.loc[s, ['~id~', '~weight~', '~objects~', '~over/under used %~']]
-        return str(a.sort_values(by='~over/under used %~', ascending=False))
+        n = self.main.value_name()
+        a = d.loc[s, ['~id~', '~weight~', '~' + n + '~', '~over/under filled %~']]
+        return str(a.sort_values(by='~over/under filled %~', ascending=False))
+
+    def analyze_crushmap(self, crushmap):
+        c = Crush(backward_compatibility=self.args.backward_compatibility)
+        c.parse(crushmap)
+        (take, failure_domain) = c.rule_get_take_failure_domain(self.args.rule)
+        return self.run_simulation(c, take, failure_domain)
 
     def analyze(self):
-        c = Crush(verbose=self.args.verbose,
-                  backward_compatibility=self.args.backward_compatibility)
-        c.parse(self.args.crushmap)
+        self.pre_sanity_check_args()
+        c = Crush(backward_compatibility=self.args.backward_compatibility)
+        c.parse(self.main.convert_to_crushmap(self.args.crushmap))
+        self.post_sanity_check_args()
         (take, failure_domain) = c.rule_get_take_failure_domain(self.args.rule)
+        d = self.run_simulation(c, take, failure_domain)
+        worst = self.analyze_failures(c, take, failure_domain)
+        return (d, worst, failure_domain)
+
+    def analyze_report(self, d, worst, failure_domain):
+        d['~weight~'] /= 0x10000
         if self.args.type:
             type = self.args.type
         else:
             type = failure_domain
         pd.set_option('precision', 2)
-
-        d = self.run_simulation(c, take, failure_domain)
         out = ""
         out += self._format_report(d, type)
-        out += "\n\nWorst case scenario if a " + str(failure_domain) + " fails:\n\n"
-        worst = self.analyze_failures(c, take, failure_domain)
         if worst is not None:
+            out += "\n\nWorst case scenario if a " + str(failure_domain) + " fails:\n\n"
             out += str(worst)
-        if d['~overweight~'].any():
-            out += "\n\nThe following are overweight:\n\n"
-            out += str(d.loc[d['~overweight~'], ['~id~', '~weight~']])
+        if d['~overweighted~'].any():
+            out += "\n\nThe following are overweighted and should be cropped:\n\n"
+            out += str(d.loc[d['~overweighted~'],
+                             ['~id~', '~weight~', '~cropped weight~', '~cropped %~']])
         return out
 
     def run(self):
         if not self.args.crushmap:
             raise Exception("missing --crushmap")
-        return self.analyze()
+        return self.analyze_report(*self.analyze())

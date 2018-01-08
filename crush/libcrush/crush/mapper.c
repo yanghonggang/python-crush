@@ -322,7 +322,7 @@ static inline int *get_choose_arg_ids(const struct crush_bucket_straw2 *bucket,
 
 static int bucket_straw2_choose(const struct crush_bucket_straw2 *bucket,
 				int x, int r, const struct crush_choose_arg *arg,
-                                int position, int *out)
+                                int position)
 {
 	unsigned int i, high = 0;
 	unsigned int u;
@@ -331,15 +331,7 @@ static int bucket_straw2_choose(const struct crush_bucket_straw2 *bucket,
         int *ids = get_choose_arg_ids(bucket, arg);
 	for (i = 0; i < bucket->h.size; i++) {
                 dprintk("weight 0x%x item %d\n", weights[i], ids[i]);
-                int skip = 0;
-                int j;
-                for (j = 0; j < position; j++) {
-                  if (bucket->h.items[i] == out[j]) {
-                    skip = 1;
-                    break;
-                  }
-                }
-		if (skip == 0 && weights[i]) {
+		if (weights[i]) {
 			u = crush_hash32_3(bucket->h.hash, x, ids[i], r);
 			u &= 0xffff;
 
@@ -380,7 +372,7 @@ static int crush_bucket_choose(const struct crush_bucket *in,
 			       struct crush_work_bucket *work,
 			       int x, int r,
                                const struct crush_choose_arg *arg,
-                               int position, int *out)
+                               int position)
 {
 	dprintk(" crush_bucket_choose %d x=%d r=%d\n", in->id, x, r);
 	BUG_ON(in->size == 0);
@@ -402,7 +394,7 @@ static int crush_bucket_choose(const struct crush_bucket *in,
 	case CRUSH_BUCKET_STRAW2:
 		return bucket_straw2_choose(
 			(const struct crush_bucket_straw2 *)in,
-			x, r, arg, position, out);
+			x, r, arg, position);
 	default:
 		dprintk("unknown bucket %d alg %d\n", in->id, in->alg);
 		return in->items[0];
@@ -519,7 +511,7 @@ parent_r %d stable %d\n",
 						in, work->work[-1-in->id],
 						x, r,
                                                 (choose_args ? &choose_args[-1-in->id] : 0),
-                                                outpos, out);
+                                                outpos);
 				if (item >= map->max_devices) {
 					dprintk("   bad item %d\n", item);
 					skip_rep = 1;
@@ -729,7 +721,7 @@ static void crush_choose_indep(const struct crush_map *map,
 					in, work->work[-1-in->id],
 					x, r,
                                         (choose_args ? &choose_args[-1-in->id] : 0),
-                                        outpos, out);
+                                        outpos);
 				if (item >= map->max_devices) {
 					dprintk("   bad item %d\n", item);
 					out[rep] = CRUSH_ITEM_NONE;
@@ -1002,11 +994,6 @@ int crush_do_rule(const struct crush_map *map,
 
 			for (i = 0; i < wsize; i++) {
 				int bno;
-				/*
-				 * see CRUSH_N, CRUSH_N_MINUS macros.
-				 * basically, numrep <= 0 means relative to
-				 * the provided result_max
-				 */
 				numrep = curstep->arg1;
 				if (numrep <= 0) {
 					numrep += result_max;
