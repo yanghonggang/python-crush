@@ -1,0 +1,319 @@
+CHANGES
+=======
+
+1.0.25
+------
+
+* version 1.0.25
+* analyze: only warn about overweight items
+* bump 1.0.25
+
+1.0.24
+------
+
+* version 1.0.24
+* analyze: normalized weights based on the effective weight
+* analyze: implement collect\_expected\_objects
+* crush: fix split/merge choose\_args
+* there are no submodules
+* libcrush: Ceph txt format rule\_id is incorrect
+* libcrush: fail if choose\_args references a non existent bucket
+* crush: filter must filter out choose\_args
+* crush: find\_bucket must recurse on walk
+* bump 1.0.24
+
+1.0.23
+------
+
+* version 1.0.23
+* analyze: split \_format\_report out of analyze
+* analyze: document the worst over used in case of a failure
+* doc: the issue explaining over/under used is no longer up to date
+* analyze: display the worst over used in case of a failure
+* crush: Crush.filter to trim buckets
+* analyze: move collect\_paths,collect\_item2path to Crush
+* analyze: move find\_take,analyze\_rule to Crush
+* crushmap: distinguish parsing and manipulation
+* bump 1.0.23
+* doc: forgetting to git pull master is a common mistake
+
+1.0.22
+------
+
+* version 1.0.22
+* bump 1.0.22
+* version 1.0.21
+* ceph: resolve reference\_id
+* libcrush: the count argument of step choose can be negative
+* update installation instructions for CentOS 7
+* remove duplicate requirements in requirements-dev.txt
+* convert: update the documentation
+* rework ceph convert
+* libcrush: trim useless ids and weight\_set
+* tests: assume tox is installed system wide
+* libcrush: implement copy\_tunables
+* libcrush: allow for numerical indices for choose\_args
+* libcrush: parse 'types' if available
+* rename pool\_pps into ceph\_pool\_pps
+* document that Crush.get\_crushmap() returns a dereferenced crushmap
+* libcrush: clear choose\_args that are not used
+* doc: reference to the last sync with Ceph
+* libcrush: extract from Ceph
+* Revert "libcrush: extract from Ceph"
+* bump 1.0.21
+
+1.0.20
+------
+
+* version 1.0.20
+* manylinux py27 does not have virtualenv
+* doc: note about the weird hard coded include
+* doc: notes on debugging readthedocs
+* split requirements-dev.txt out of requirement.txt
+* document pip freeze updates
+* remove pip install tox from bootstrap
+* remove obsolete .gitmodule
+* docs: cannot compile LibCrush
+* doc: fix formatting errors
+* doc: make warnings fail on error
+* bump 1.0.20
+
+1.0.19
+------
+
+* version 1.0.19
+* libcrush: guard against NULL pointers
+* libcrush: fix leaking trace messages
+* bump 1.0.19
+
+1.0.18
+------
+
+* version 1.0.18
+* doc: sync with README.rst
+* wheel: fix wheelhouse permissions
+* doc: fix README.rst formatting issue
+* bump 1.0.18
+
+1.0.17
+------
+
+* version 1.0.17
+* documentation and helper scripts for manylinux
+* libcrush: include /usr/include/boost148
+* libcrush: lower cmake expectations
+* bump 1.0.17
+
+1.0.16
+------
+
+* version 1.0.16
+* doc: choose\_args structure reference and map semantic
+* crush: add map(choose\_args) parameter
+* doc: typos and missing parameters
+* libcrush: parse choose\_args
+* libcrush: remove unused variable
+* bump 1.0.16
+
+1.0.15
+------
+
+* version 1.0.15
+* fix error reporting on bugous JSON files
+* doc: reference to the last sync with Ceph
+* tests: tunables now default to optimal which leads to different results
+* libcrush: crush\_do\_rule now has an extra argument
+* libcrush: extract from Ceph
+* libcrush: sync with Ceph
+* Revert "libcrush: extract from Ceph"
+* doc: typo fix double shows
+* doc: convert handles text or binary
+* bump 1.0.15
+
+1.0.14
+------
+
+* version 1.0.14
+* add crush.8 stub
+* libcrush: fix permissions for ceph\_features.h
+* libcrush: add missing return value
+* analyze: display the number of objects
+* bump 1.0.14
+
+1.0.13
+------
+
+* version 1.0.13
+* libcrush: fix c compilation bug
+* bump 1.0.13
+
+1.0.12
+------
+
+* version 1.0.12
+* analyze,compare: implement --pool/--pg-num for Ceph
+* analyze: implement hook\_create\_values
+* rework options and subcommands
+* analyze: better naming for the test class
+* analyze,compare: remove factory()
+* compare: remove unused --crushmap argument
+* tests: Reverted un-necessary change
+* compare: Can now apply weights
+* tests: Testing for weights in 'crush analyze'
+* tests: Testing for Crush.parse\_weights\_file
+* libcrush: get all pps values for a Ceph pool
+* tests: Get test data ready for testing weights
+* analyze: added CLI option for weights
+* docs: Fix docstring for parse\_weights\_file
+* crush: New method for weight parsing
+* misc: Ignore PyCharm files in Git
+* tests: Added test data for OSDMap
+* doc: python-pip is required
+* doc: s/-dev/-devel/
+* bump 1.0.12
+
+1.0.11
+------
+
+* version 1.0.11
+* doc: dependencies instructions updates
+* add from \_\_future\_\_ import division
+* move setup\_hooks outside of crush
+* ceph: move the actual conversion to Crush
+* tests: remove unused files
+* compare,analyze: files can contain Ceph json,txt,binary
+* crush: transparent format conversion for parse()
+* libcrush: add support for binary crushmaps to convert()
+* crush: implement \_convert\_to\_crushmap
+* crush: define CephConverter
+* doc: update libcrush hacking instructions
+* libcrush: extract from Ceph
+* Revert "libcrush: extract from Ceph"
+* libcrush: add files required for encode/decode
+* doc: add Xavier Villaneau <xvillaneau@gmail.com>
+* ceph: CLI for converting from CRUSH text format
+* libcrush: extract from Ceph
+* libcrush: rework to import directly from Ceph
+* improve error message if straw & !backward compatibility
+* straw is not recommended, straw2 is
+* doc: remove useless and incorrect line
+* doc: Documented straw support in Crush.parse
+* libcrush: support for the straw algorithm
+* tests: Added tests for straw algorithm support
+* bump 1.0.11
+
+1.0.10
+------
+
+* version 1.0.10
+* compare: remove --compare
+* doc: cosmetic alignment
+* doc: fix double shows
+* doc: add compare to the index
+* bump 1.0.10
+
+1.0.9
+-----
+
+* version 1.0.9
+* doc: add compare example to the quick start section
+* add compare subcommand
+* crush: fix typo in weights arguments
+* analyze: add colon after defaut in usage
+* analyze: display over/under used as %
+* bump 1.0.9
+
+1.0.8
+-----
+
+* version 1.0.8
+* doc: add CLI information and --help instructions
+* ceph: add documentation
+* analyze: add documentation
+* analyze: make --backward-compatibility the default
+* analyze: strip --order-matters
+* analyze: --type is better than --failure-domain
+* analyze: default replication count is 3
+* add the analyze subcommand
+* add the ceph subcommand
+* move logging after imports
+* keys may be string or unicode
+* Crush keeps the original crushmap
+* rename main.Crush in main.Main
+* missing newline in debug message
+* the choose type may be zero for devices
+* explicit keyword arguments for Crush constructor
+* tunable must be set before map() not before parse()
+* add the license where it matters
+* bump 1.0.8
+
+1.0.7
+-----
+
+* version 1.0.7
+* a child may reference an existing bucket or device
+* typo in URL
+* chooseleaf\_descend\_once is also a tunable
+* set\_choose\_local\*\_tries argument is positive
+* support and document default tunables & step set\_\* tunables
+* bump 1.0.7
+
+1.0.6
+-----
+
+* version 1.0.6
+* bump 1.0.6
+* version 1.0.5
+* update the quick start example
+* bucket children must be ordered
+* fix step choose\* documentation
+* bump 1.0.5
+* add links to code and documentation
+* documentation updates
+* sync with the latest libcrush
+
+1.0.4
+-----
+
+* version 1.0.4
+* improve test coverage and error detection
+* increase parsing verbosity and improve readability
+* get rid of useless trackers
+* bump 1.0.4
+
+1.0.3
+-----
+
+* version 1.0.3
+* protect crush/\_\_init\_\_.py from import failure
+* make flake8 happy
+* make tests for mapping non random
+* fix Crush tests (trees)
+* API documentation
+* a rule is just a list of steps
+* the rule {min,max}\_size is not required
+* allow multiple roots
+* remove duplicate ~weight~ comparison
+* implement crush.Crush API
+* update documentation instructions
+* typo in rpm dependencies
+* bump 1.0.3
+
+1.0.2
+-----
+
+* version 1.0.2
+* portability fixes
+* add package dependencies
+* bump 1.0.2
+
+1.0.1
+-----
+
+* version 1.0.1
+* ship all necessary files
+* implement crush map parser and map function
+* import libcrush sources into the module
+* dependencies for building the extension
+* skeleton C module for libcrush
+* initial commit
