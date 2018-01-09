@@ -1,6 +1,12 @@
 CHANGES
 =======
 
+1.0.37
+------------
+
+* version 1.0.37
+* get rid of XX-target-weight bucket in crushmap
+
 1.0.36
 -----------
 * version 1.0.36

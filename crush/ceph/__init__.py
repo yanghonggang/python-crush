@@ -481,9 +481,9 @@ class CephCrush(Crush):
                 del bucket['choose_args']
             for child in bucket.get('children', []):
                 rename(child)
-        shadow_trees = copy.deepcopy(self.crushmap['trees'])
-        for tree in shadow_trees:
-            rename(tree)
+##        shadow_trees = copy.deepcopy(self.crushmap['trees'])
+##        for tree in shadow_trees:
+##            rename(tree)
 
         #
         # override the target weights with the weight set
@@ -503,7 +503,7 @@ class CephCrush(Crush):
         for tree in self.crushmap['trees']:
             reweight(tree)
 
-        self.crushmap['trees'].extend(shadow_trees)
+##        self.crushmap['trees'].extend(shadow_trees)
 
     def transform_to_write(self, version):
         if 'choose_args' not in self.crushmap:
