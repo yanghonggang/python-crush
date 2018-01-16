@@ -249,7 +249,8 @@ class Analyze(object):
                 continue
             w = d.loc[d['~type~'] == type].copy()
             tw = w['~weight~'].sum()
-            w['~overweighted~'] = w['~weight~'].apply(lambda w: w > tw / replication_count)
+            x = w['~weight~'].size
+            w['~overweighted~'] = w['~weight~'].apply(lambda w: w > tw / (replication_count / x))
             overweighted_count = len(w.loc[w['~overweighted~']])
             if overweighted_count > 0:
                 tw_not_overweighted = w.loc[~w['~overweighted~'], ['~weight~']].sum()['~weight~']

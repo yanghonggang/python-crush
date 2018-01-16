@@ -1,6 +1,15 @@
 CHANGES
 =======
 
+1.0.38
+-------------
+
+* version 1.0.38
+* 1. there maybe multiple 'choose' actions in the rule the first one is the failure_domain domain
+* 2. fix '~overweighted~' calculation problem
+* 3. our tool should work even when cluster status is 'HEALTH_WARN'
+* 4. Disable flag checking, because we don't care other pool's properties
+
 1.0.37
 ------------
 

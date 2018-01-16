@@ -726,8 +726,10 @@ class Crush(object):
                 assert take is None
                 take = step[1]
             elif step[0].startswith('choose'):
-                assert failure_domain is None
-                (op, firstn_or_indep, num, _, failure_domain) = step
+                # there maybe multiple 'choose' actions in the rule
+                # the first one it the failure_domain domain
+                if failure_domain is None:
+                    (op, firstn_or_indep, num, _, failure_domain) = step
         return (take, failure_domain)
 
     def find_bucket(self, name):

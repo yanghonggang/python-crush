@@ -51,8 +51,10 @@ class HealthError(Exception):
 class CephReport(object):
 
     def parse_report(self, report):
-        if report['health']['overall_status'] != 'HEALTH_OK':
-            raise HealthError("expected health overall_status == HEALTH_OK but got " +
+        # Disable this, for we want this tool work even when cluster is in
+        # 'HEALTH_WARN' status
+        if report['health']['overall_status'] == 'HEALTH_ERR':
+            raise HealthError("expected health overall_status != HEALTH_ERR but got " +
                               report['health']['overall_status'] + "instead")
 
         v = report['version'].split('.')
@@ -102,11 +104,12 @@ class CephReport(object):
                 raise UnsupportedError(
                     "pool " + pool['pool_name'] + " object_hash " + str(pool['object_hash']) +
                     " is not supported, only object_hash == 2 (rjenkins)")
-            if pool['flags_names'] != 'hashpspool':
-                raise UnsupportedError(
-                    "pool " + pool['pool_name'] + " has flags_names " +
-                    "'" + str(pool['flags_names']) + "'" +
-                    " is no supported, only hashpspool")
+            # Disable flag checking, because we don't care other pool's properties
+            # if pool['flags_names'] != 'hashpspool':
+            #     raise UnsupportedError(
+            #         "pool " + pool['pool_name'] + " has flags_names " +
+            #         "'" + str(pool['flags_names']) + "'" +
+            #         " is no supported, only hashpspool")
             ruleset = pool['crush_ruleset']
             if str(ruleset) in crushmap.get('choose_args', {}):
                 choose_args = str(ruleset)
